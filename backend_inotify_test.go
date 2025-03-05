@@ -27,8 +27,8 @@ func TestRemoveState(t *testing.T) {
 
 	check := func(want int) {
 		t.Helper()
-		if w.b.(*inotify).watches.len() != want {
-			t.Error(w.b.(*inotify).watches)
+		if len(w.WatchList()) != want {
+			t.Error(w.WatchList())
 		}
 	}
 
