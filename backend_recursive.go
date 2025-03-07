@@ -4,47 +4,47 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
-  "runtime"
-  "strings"
-  "sync"
+	"runtime"
+	"strings"
+	"sync"
 )
 
 type recursive struct {
-  b backend
-  paths map[string]withOpts
-  pathsMu sync.Mutex
-	ev chan Event
-	errs chan error
-	ev_wrapped chan Event
-	errs_wrapped chan error
-	done chan struct{}
-	doneMu sync.Mutex
-	doneResp chan struct{}
+	b							backend
+	paths					map[string]withOpts
+	pathsMu				sync.Mutex
+	ev						chan Event
+	errs					chan error
+	ev_wrapped 		chan Event
+	errs_wrapped	chan error
+	done					chan struct{}
+	doneMu				sync.Mutex
+	doneResp			chan struct{}
 }
 
 func newRecursiveBackend(ev chan Event, errs chan error) (backend, error) {
-  return newRecursiveBufferedBackend(0, ev, errs)
+	return newRecursiveBufferedBackend(0, ev, errs)
 }
 
 func newRecursiveBufferedBackend(sz uint, ev chan Event, errs chan error) (backend, error) {
-  // Make base backend
-  ev_wrapped := make(chan Event)
-  errs_wrapped := make(chan error)
-  b, err := newBufferedBackend(sz, ev_wrapped, errs_wrapped)
-  if err != nil {
-    return nil, err
-  }
+	// Make base backend
+	ev_wrapped := make(chan Event)
+	errs_wrapped := make(chan error)
+	b, err := newBufferedBackend(sz, ev_wrapped, errs_wrapped)
+	if err != nil {
+		return nil, err
+	}
 
-  // Wrap in recursive backend
+	// Wrap in recursive backend
 	w := &recursive{
-		b:      b,
-		paths:  make(map[string]withOpts),
-		ev: ev,
-		errs: errs,
-		ev_wrapped: ev_wrapped,
-		errs_wrapped: errs_wrapped,
-		done:        make(chan struct{}),
-		doneResp:    make(chan struct{}),
+		b:						b,
+		paths:				make(map[string]withOpts),
+		ev: 					ev,
+		errs: 				errs,
+		ev_wrapped: 	ev_wrapped,
+		errs_wrapped:	errs_wrapped,
+		done:					make(chan struct{}),
+		doneResp:			make(chan struct{}),
 	}
 
 	// Start watch
@@ -54,19 +54,19 @@ func newRecursiveBufferedBackend(sz uint, ev chan Event, errs chan error) (backe
 }
 
 func (w *recursive) getOptions(path string) (withOpts, error) {
-  w.pathsMu.Lock()
-  defer w.pathsMu.Unlock()
+	w.pathsMu.Lock()
+	defer w.pathsMu.Unlock()
 	for prefix, with := range w.paths {
-	  if strings.HasPrefix(path, prefix) {
-		  return with, nil
-	  }
+		if strings.HasPrefix(path, prefix) {
+			return with, nil
+		}
 	}
 	return defaultOpts, fmt.Errorf("%w: %s", ErrNonExistentWatch, path)
 }
 
 func (w *recursive) pipeEvents() {
 	defer func() {
-	  close(w.doneResp)
+		close(w.doneResp)
 		close(w.errs)
 		close(w.ev)
 	}()
@@ -74,28 +74,28 @@ func (w *recursive) pipeEvents() {
 	for {
 		select {
 		case <-w.done:
-		  return
+			return
 		case evt, ok := <-w.ev_wrapped:
-		  if !ok {
-		    return
-		  }
-		  w.sendEvent(evt)
+			if !ok {
+				return
+			}
+			w.sendEvent(evt)
 
-		  if evt.Has(Create) {
+			if evt.Has(Create) {
 				// Establish recursive watch and, if requested, send create events
 				// for all children
-		    with, err := w.getOptions(evt.Name)
-		    if err == nil && with.recurse {
-				  first := true
+				with, err := w.getOptions(evt.Name)
+				if err == nil && with.recurse {
+					first := true
 					filepath.WalkDir(evt.Name, func(path string, d fs.DirEntry, err error) error {
 						if err != nil {
 							return err
 						}
 						if d.IsDir() && runtime.GOOS != "windows" {
-						  return w.b.Add(path)
+							return w.b.Add(path)
 							//return w.b.AddWith(path, with)
 						}
-						if !first && with.sendCreate {  // event for first already sent above
+						if !first && with.sendCreate {	// event for first already sent above
 							w.sendEvent(Event{Name: path, Op: Create})
 						}
 						first = false
@@ -150,34 +150,34 @@ func (w *recursive) Close() error {
 		w.doneMu.Unlock()
 		return nil
 	}
-  err := w.b.Close()
+	err := w.b.Close()
 	close(w.done)
 	w.doneMu.Unlock()
 	<-w.doneResp
-  return err
+	return err
 }
 
 func (w *recursive) Add(path string) error {
-  return w.AddWith(path)
+	return w.AddWith(path)
 }
 
 func (w *recursive) AddWith(path string, opts ...addOpt) error {
-  base, recurse := recursivePath(path);
+	base, recurse := recursivePath(path);
 	with := getOptions(opts...)
-  with.recurse = recurse
-  w.pathsMu.Lock()
-  w.paths[base] = with
-  w.pathsMu.Unlock()
+	with.recurse = recurse
+	w.pathsMu.Lock()
+	w.paths[base] = with
+	w.pathsMu.Unlock()
 
-  if recurse {
-  	if runtime.GOOS == "windows" {
-    	// Windows backend expects the /... at the end of the path
-  		err := w.b.AddWith(path, opts...)
-  		if err != nil {
-  		  return err
-  		}
-  	}
-    if runtime.GOOS != "windows" || with.sendCreate {
+	if recurse {
+		if runtime.GOOS == "windows" {
+			// Windows backend expects the /... at the end of the path
+			err := w.b.AddWith(path, opts...)
+			if err != nil {
+				return err
+			}
+		}
+		if runtime.GOOS != "windows" || with.sendCreate {
 			return filepath.WalkDir(base, func(root string, d fs.DirEntry, err error) error {
 				if err != nil {
 					return err
@@ -212,23 +212,23 @@ func (w *recursive) AddWith(path string, opts ...addOpt) error {
 }
 
 func (w *recursive) Remove(path string) error {
-  base, recurse := recursivePath(path);
+	base, recurse := recursivePath(path);
 	with, err := w.getOptions(base)
 	if err != nil {
-	  return err
+		return err
 	}
 	if recurse && !with.recurse {
 		return fmt.Errorf("can't use /... with non-recursive watch %q", base)
 	}
 	w.pathsMu.Lock()
-  delete(w.paths, base)
-  w.pathsMu.Unlock()
+	delete(w.paths, base)
+	w.pathsMu.Unlock()
 
-  if with.recurse {
-    if runtime.GOOS == "windows" {
-    	// Windows backend expects the /... at the end of the path
-		  return w.b.Remove(path)
-    } else {
+	if with.recurse {
+		if runtime.GOOS == "windows" {
+			// Windows backend expects the /... at the end of the path
+			return w.b.Remove(path)
+		} else {
 			// Recursively remove directories
 			return filepath.WalkDir(base, func(root string, d fs.DirEntry, err error) error {
 				if err != nil {
@@ -240,13 +240,13 @@ func (w *recursive) Remove(path string) error {
 				}
 			})
 		}
-  } else {
-	  return w.b.Remove(base)
-  }
+	} else {
+		return w.b.Remove(base)
+	}
 }
 
 func (w *recursive) WatchList() []string {
-  return w.b.WatchList()
+	return w.b.WatchList()
 }
 
 func (w *recursive) xSupports(op Op) bool {
