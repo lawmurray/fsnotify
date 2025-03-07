@@ -193,7 +193,7 @@ func (w *recursive) AddWith(path string, opts ...addOpt) error {
 				// `mkdir -p /tmp/one/two/three && mv /tmp/one one`, i.e. an existing
 				// directory hierarchy moved in, which also only the create of `one`
 				// may be reported.
-				if with.sendCreate && d.IsDir() {
+				if with.sendCreate {
 					w.ev <- Event{Name: root, Op: Create}
 				}
 
