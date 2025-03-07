@@ -201,31 +201,36 @@ func (w *recursive) AddWith(path string, opts ...addOpt) error {
 }
 
 func (w *recursive) Remove(path string) error {
-  path, recurse := recursivePath(path);
-	with, err := w.getOptions(path)
+  base, recurse := recursivePath(path);
+	with, err := w.getOptions(base)
 	if err != nil {
 	  return err
 	}
 	if recurse && !with.recurse {
-		return fmt.Errorf("can't use /... with non-recursive watch %q", path)
+		return fmt.Errorf("can't use /... with non-recursive watch %q", base)
 	}
 	w.pathsMu.Lock()
-  delete(w.paths, path)
+  delete(w.paths, base)
   w.pathsMu.Unlock()
 
-  if with.recurse && runtime.GOOS != "windows" {
-		// Recursively remove directories
-		return filepath.WalkDir(path, func(root string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			} else if d.IsDir() {
-				return w.b.Remove(root)
-			} else {
-			  return nil
-			}
-		})
+  if with.recurse {
+    if runtime.GOOS == "windows" {
+    	// Windows backend expects the /... at the end of the path
+		  return w.b.Remove(path)
+    } else {
+			// Recursively remove directories
+			return filepath.WalkDir(base, func(root string, d fs.DirEntry, err error) error {
+				if err != nil {
+					return err
+				} else if d.IsDir() {
+					return w.b.Remove(root)
+				} else {
+					return nil
+				}
+			})
+		}
   } else {
-	  return w.b.Remove(path)
+	  return w.b.Remove(base)
   }
 }
 
