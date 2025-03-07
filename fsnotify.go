@@ -410,6 +410,7 @@ type (
 		op         Op
 		noFollow   bool
 		sendCreate bool
+		recurse    bool
 	}
 )
 
