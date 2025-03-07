@@ -10,16 +10,16 @@ import (
 )
 
 type recursive struct {
-	b							backend
-	paths					map[string]withOpts
-	pathsMu				sync.Mutex
-	ev						chan Event
-	errs					chan error
-	ev_wrapped 		chan Event
-	errs_wrapped	chan error
-	done					chan struct{}
-	doneMu				sync.Mutex
-	doneResp			chan struct{}
+	b            backend
+	paths        map[string]withOpts
+	pathsMu      sync.Mutex
+	ev           chan Event
+	errs         chan error
+	ev_wrapped   chan Event
+	errs_wrapped chan error
+	done         chan struct{}
+	doneMu       sync.Mutex
+	doneResp     chan struct{}
 }
 
 func newRecursiveBackend(ev chan Event, errs chan error) (backend, error) {
@@ -37,14 +37,14 @@ func newRecursiveBufferedBackend(sz uint, ev chan Event, errs chan error) (backe
 
 	// Wrap in recursive backend
 	w := &recursive{
-		b:						b,
-		paths:				make(map[string]withOpts),
-		ev: 					ev,
-		errs: 				errs,
-		ev_wrapped: 	ev_wrapped,
-		errs_wrapped:	errs_wrapped,
-		done:					make(chan struct{}),
-		doneResp:			make(chan struct{}),
+		b:            b,
+		paths:        make(map[string]withOpts),
+		ev:           ev,
+		errs:         errs,
+		ev_wrapped:   ev_wrapped,
+		errs_wrapped: errs_wrapped,
+		done:         make(chan struct{}),
+		doneResp:     make(chan struct{}),
 	}
 
 	// Start watch
