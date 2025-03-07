@@ -168,7 +168,7 @@ func (w *recursive) AddWith(path string, opts ...addOpt) error {
   w.paths[path] = with
   w.pathsMu.Unlock()
 
-  if recurse {
+  if recurse && (runtime.GOOS != "windows" || with.sendCreate) {
 		return filepath.WalkDir(path, func(root string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
