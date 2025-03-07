@@ -161,43 +161,53 @@ func (w *recursive) Add(path string) error {
 }
 
 func (w *recursive) AddWith(path string, opts ...addOpt) error {
-  path, recurse := recursivePath(path);
+  base, recurse := recursivePath(path);
 	with := getOptions(opts...)
   with.recurse = recurse
   w.pathsMu.Lock()
-  w.paths[path] = with
+  w.paths[base] = with
   w.pathsMu.Unlock()
 
-  if recurse && (runtime.GOOS != "windows" || with.sendCreate) {
-		return filepath.WalkDir(path, func(root string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
+  if recurse {
+  	if runtime.GOOS == "windows" {
+    	// Windows backend expects the /... at the end of the path
+  		err := w.b.AddWith(path, opts...)
+  		if err != nil {
+  		  return err
+  		}
+  	}
+    if runtime.GOOS != "windows" || with.sendCreate {
+			return filepath.WalkDir(base, func(root string, d fs.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
 
-			// Send create events for all directories and files recursively when
-			// a new directory is created. This ensures that any files created
-			// while the recursive watch is being established are reported as
-			// created, in addition to any existing files and directories from an
-			// existing directory hierarchy moved in. It includes the special case
-			// of `mkdir -p one/two/three` on some systems, where only the creation
-			// of `one` may be reported. More generally, it includes the case
-			// `mkdir -p /tmp/one/two/three && mv /tmp/one one`, i.e. an existing
-			// directory hierarchy moved in, which also only the create of `one`
-			// may be reported.
-			if with.sendCreate && d.IsDir() {
-				w.ev <- Event{Name: root, Op: Create}
-			}
+				// Send create events for all directories and files recursively when
+				// a new directory is created. This ensures that any files created
+				// while the recursive watch is being established are reported as
+				// created, in addition to any existing files and directories from an
+				// existing directory hierarchy moved in. It includes the special case
+				// of `mkdir -p one/two/three` on some systems, where only the creation
+				// of `one` may be reported. More generally, it includes the case
+				// `mkdir -p /tmp/one/two/three && mv /tmp/one one`, i.e. an existing
+				// directory hierarchy moved in, which also only the create of `one`
+				// may be reported.
+				if with.sendCreate && d.IsDir() {
+					w.ev <- Event{Name: root, Op: Create}
+				}
 
-			// Recursively watch directories if backend does not support natively
-			if d.IsDir() && runtime.GOOS != "windows" {
-				return w.b.AddWith(root, opts...)
-			} else {
-			  return nil
-			}
-		})
-  } else {
-	  return w.b.AddWith(path, opts...)
-  }
+				// Recursively watch directories if backend does not support natively
+				if d.IsDir() && runtime.GOOS != "windows" {
+					return w.b.AddWith(root, opts...)
+				} else {
+					return nil
+				}
+			})
+		}
+	} else {
+		return w.b.AddWith(base, opts...)
+	}
+	return nil
 }
 
 func (w *recursive) Remove(path string) error {
