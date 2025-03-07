@@ -10,16 +10,16 @@ import (
 )
 
 type recursive struct {
-	b            backend
-	paths        map[string]withOpts
-	pathsMu      sync.Mutex
-	ev           chan Event
-	errs         chan error
-	ev_wrapped   chan Event
-	errs_wrapped chan error
-	done         chan struct{}
-	doneMu       sync.Mutex
-	doneResp     chan struct{}
+	b         backend
+	paths     map[string]withOpts
+	pathsMu   sync.Mutex
+	ev        chan Event
+	errs      chan error
+	ev_base   chan Event
+	errs_base chan error
+	done      chan struct{}
+	doneMu    sync.Mutex
+	doneResp  chan struct{}
 }
 
 func newRecursiveBackend(ev chan Event, errs chan error) (backend, error) {
@@ -28,26 +28,26 @@ func newRecursiveBackend(ev chan Event, errs chan error) (backend, error) {
 
 func newRecursiveBufferedBackend(sz uint, ev chan Event, errs chan error) (backend, error) {
 	// Make base backend
-	ev_wrapped := make(chan Event)
-	errs_wrapped := make(chan error)
-	b, err := newBufferedBackend(sz, ev_wrapped, errs_wrapped)
+	ev_base := make(chan Event)
+	errs_base := make(chan error)
+	b, err := newBufferedBackend(sz, ev_base, errs_base)
 	if err != nil {
 		return nil, err
 	}
 
-	// Wrap in recursive backend
+	// Wrap base backend in recursive backend
 	w := &recursive{
 		b:            b,
 		paths:        make(map[string]withOpts),
 		ev:           ev,
 		errs:         errs,
-		ev_wrapped:   ev_wrapped,
-		errs_wrapped: errs_wrapped,
+		ev_base:   ev_base,
+		errs_base: errs_base,
 		done:         make(chan struct{}),
 		doneResp:     make(chan struct{}),
 	}
 
-	// Start watch
+	// Pipe base events through the recursive backend
 	go w.pipeEvents()
 
 	return w, nil
@@ -75,7 +75,7 @@ func (w *recursive) pipeEvents() {
 		select {
 		case <-w.done:
 			return
-		case evt, ok := <-w.ev_wrapped:
+		case evt, ok := <-w.ev_base:
 			if !ok {
 				return
 			}
@@ -93,6 +93,9 @@ func (w *recursive) pipeEvents() {
 						}
 						if d.IsDir() && runtime.GOOS != "windows" {
 							return w.b.Add(path)
+
+							// Ideally the options would be passed but no such function exists
+							// at present
 							//return w.b.AddWith(path, with)
 						}
 						if !first && with.sendCreate {	// event for first already sent above
@@ -103,7 +106,7 @@ func (w *recursive) pipeEvents() {
 					})
 				}
 			}
-		case err, ok := <-w.errs_wrapped:
+		case err, ok := <-w.errs_base:
 			if !ok {
 				return
 			}
@@ -183,6 +186,14 @@ func (w *recursive) AddWith(path string, opts ...addOpt) error {
 					return err
 				}
 
+				// Recursively watch directories if backend does not support natively
+				if d.IsDir() && runtime.GOOS != "windows" {
+					err := w.b.AddWith(root, opts...)
+					if err != nil {
+						return err
+					}
+				}
+				
 				// Send create events for all directories and files recursively when
 				// a new directory is created. This ensures that any files created
 				// while the recursive watch is being established are reported as
@@ -197,12 +208,7 @@ func (w *recursive) AddWith(path string, opts ...addOpt) error {
 					w.ev <- Event{Name: root, Op: Create}
 				}
 
-				// Recursively watch directories if backend does not support natively
-				if d.IsDir() && runtime.GOOS != "windows" {
-					return w.b.AddWith(root, opts...)
-				} else {
-					return nil
-				}
+				return nil
 			})
 		}
 	} else {
