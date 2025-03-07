@@ -150,10 +150,11 @@ func (w *recursive) Close() error {
 		w.doneMu.Unlock()
 		return nil
 	}
+  err := w.b.Close()
 	close(w.done)
 	w.doneMu.Unlock()
 	<-w.doneResp
-  return w.b.Close()
+  return err
 }
 
 func (w *recursive) Add(path string) error {
